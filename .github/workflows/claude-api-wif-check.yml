@@ -1,0 +1,49 @@
+# Checks that the repository can call the Claude API with Workload Identity Federation:
+# the workflow's GitHub OIDC token is exchanged for a short-lived access token, so no
+# API key is stored. Run it by hand from the Actions tab.
+name: Claude API federation check
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  claude-api-wif-check:
+    # This job calls Claude, so it runs on GitHub's egress-firewall runner, which
+    # filters the job's outbound network traffic (allow list: .github/egress-firewall.yaml).
+    runs-on: ubuntu-24.04-firewall
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      # Required to mint the OIDC token exchanged for a Claude API access token
+      id-token: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+
+      - name: Install the Anthropic Python SDK
+        run: |
+          python3 -m venv "$RUNNER_TEMP/venv"
+          "$RUNNER_TEMP/venv/bin/pip" install --quiet "anthropic==1.12.0"
+
+      - name: Fetch GitHub OIDC token
+        run: |
+          umask 077
+          curl -sSf -H "Authorization: Bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+            "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=https://api.anthropic.com" \
+            | jq -r .value > "$RUNNER_TEMP/anthropic-oidc-token"
+
+      - name: Call the Claude API
+        env:
+          ANTHROPIC_IDENTITY_TOKEN_FILE: ${{ runner.temp }}/anthropic-oidc-token
+          ANTHROPIC_FEDERATION_RULE_ID: ${{ vars.ANTHROPIC_FEDERATION_RULE_ID }}
+          ANTHROPIC_ORGANIZATION_ID: ${{ vars.ANTHROPIC_ORGANIZATION_ID }}
+          ANTHROPIC_SERVICE_ACCOUNT_ID: ${{ vars.ANTHROPIC_SERVICE_ACCOUNT_ID }}
+          ANTHROPIC_WORKSPACE_ID: ${{ vars.ANTHROPIC_WORKSPACE_ID }}
+        run: '"$RUNNER_TEMP/venv/bin/python" .github/scripts/claude_api_wif_check.py'
+
+      - name: Delete OIDC token
+        if: always()
+        run: rm -f "$RUNNER_TEMP/anthropic-oidc-token"

@@ -25,3 +25,7 @@ allow:
   - security.ubuntu.com
   # Statsig event logging (claude-dedupe-issues.yml, "Log duplicate comment event to Statsig")
   - events.statsigapi.net
+  # Python package index and file host: the anthropic package that
+  # claude-api-wif-check.yml installs with pip
+  - pypi.org
+  - files.pythonhosted.org
